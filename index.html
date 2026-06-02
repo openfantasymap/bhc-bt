@@ -103,9 +103,9 @@
       <h2>Frame settings</h2>
       <div class="split">
         <div class="field"><label>start byte</label><input type="text" id="startByte" value="0x55"></div>
-        <div class="field"><label>flag (header[1])</label><input type="text" id="flagByte" value="0x00"></div>
+        <div class="field"><label>flag = protocol ver</label><input type="text" id="flagByte" value="0x05"></div>
       </div>
-      <div class="hint">Frame = <code>[start][flag][len][...payload][crc8]</code>, <code>len</code>=total bytes, CRC-8 poly 0x07. ✓ Live-confirmed: the ARC accepts requests with <code>flag=0x00</code> and its own replies carry <code>flag=0x05</code>. State queries return only an <code>ACK</code> until a game is authenticated; NFC card taps stream in regardless.</div>
+      <div class="hint">Frame = <code>[start][flag][len][...payload][crc8]</code>, <code>len</code>=total bytes, CRC-8 poly 0x07. The <b>flag is the protocol version</b> — the app uses <code>0x05</code> (and probes down to 1 on failure). Earlier sessions used <code>0x00</code>, an invalid version, which is likely why queries only returned the <code>00 ff 47</code> ACK. Default is now <code>0x05</code>; try <code>0x04</code>/<code>0x03</code> if needed.</div>
     </section>
 
     <section>
