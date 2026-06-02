@@ -205,9 +205,18 @@ function leUint(bytes){ let v=0; for(let i=bytes.length-1;i>=0;i--) v=v*256+(byt
 function leSint(bytes){ let v=leUint(bytes); const bits=bytes.length*8; if(v>=2**(bits-1)) v-=2**bits; return v; }
 const BATTERY_SCALE = 0.0004615; // voltage = scale * leUint(payload)  (from app)
 
-// Known NFC card identities (payload = [marker, cardType, cardId, ...]); confirmed live.
-const CARD_TYPES = { "03:01":"governor", "03:02":"ambassador" };
-function cardName(ct,ci){ return CARD_TYPES[`${(ct&0xff).toString(16).padStart(2,"0")}:${(ci&0xff).toString(16).padStart(2,"0")}`]; }
+// User-action / board events (frame T=0x02 S=0x01 → app's routerUserAction).
+// payload[0] = category: 0x01 = building, 0x02 = NFC card.
+// For NFC cards: payload[1] = subclass, payload[2] = id.
+const NFC_SUBCLASS = { 1:"card-A", 2:"decree/directive", 3:"character", 4:"scenario" };
+const CARD_NAMES = { "3:1":"governor", "3:2":"ambassador" }; // subclass:id (confirmed live)
+function cardName(sub,id){ return CARD_NAMES[`${sub&0xff}:${id&0xff}`]; }
+function decodeUserAction(p){
+  const cat=p[0];
+  if(cat===0x01){ const det=p[3]||0; return `<b>building</b> id ${hex(p[1])} data ${hex(p[2])} detail ${hex(det)} (hi ${det>>4} lo ${det&0xf})`; }
+  if(cat===0x02){ const sub=p[1], id=p[2], nm=cardName(sub,id); return `<b>NFC ${NFC_SUBCLASS[sub]||"sub "+hex(sub)}</b> id ${hex(id)}${nm?` (${nm})`:""}`; }
+  return `<b>action</b> cat ${hex(cat)} [${hexs(p.slice(0,5))}]`;
+}
 
 //============================================================================
 // Command catalogue (reconstructed). payload = bytes from `type` onward.
@@ -272,11 +281,8 @@ function decodeResponse(d){
   const p=d.payload;
   // 0x00 = generic ACK / status (confirmed: ARC replies 00 ff <status> to every command)
   if(d.type===0x00) return `<b>ACK</b> status ${p.length?hex(p[0]):"—"}`;
-  // 0x02 = NFC / module / user-action event (resp[3]===0x02 path in app)
-  if(d.type===0x02){
-    const ct=p[1], ci=p[2], nm=cardName(ct,ci);
-    return `<b>NFC/module</b> type ${hex(ct)} id ${hex(ci)}${nm?` (${nm})`:""}`;
-  }
+  // 0x02 = user-action / board event (resp[3]===0x02 → routerUserAction)
+  if(d.type===0x02) return decodeUserAction(p);
   // 0x03 = system info → first 2 bytes may be battery voltage
   if(d.type===0x03 && p.length>=2) return `<b>sysinfo</b> · battery? ${(BATTERY_SCALE*leUint(p.slice(0,2))).toFixed(3)} V`;
   // small numeric payloads only
