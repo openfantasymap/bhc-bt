@@ -54,6 +54,7 @@
   .entry .hex{color:var(--fg)}
   .entry .meta{color:var(--dim);font-size:11.5px;margin-top:2px}
   .entry .meta b{color:var(--accent);font-weight:600}
+  .entry .meta .nm{color:#e3b341;font-weight:600}
   .entry.err .body{color:var(--red)}
   .bad{color:var(--red)} .ok{color:var(--green)}
   .hint{color:var(--dim);font-size:11.5px;margin-top:6px}
@@ -205,16 +206,32 @@ function leUint(bytes){ let v=0; for(let i=bytes.length-1;i>=0;i--) v=v*256+(byt
 function leSint(bytes){ let v=leUint(bytes); const bits=bytes.length*8; if(v>=2**(bits-1)) v-=2**bits; return v; }
 const BATTERY_SCALE = 0.0004615; // voltage = scale * leUint(payload)  (from app)
 
+// ── Name tables, extracted from the app's embedded English dictionary ──────
+const NAMES = {
+  building: {"0":"ARC","1":"Industrial Dome","2":"Automatic Well","3":"Solar Power Plant","4":"Solar Power Plant","5":"Landing Pad","6":"Storage","7":"Community Dome","8":"Residential Dome","9":"Residential Dome","10":"Residential Dome","11":"Life Support System","12":"Gas & Liquids Tanks","13":"Atmospheric Synthesizer","14":"Hydroponics Dome","15":"Technical Zone","16":"Security Dome","17":"Nuclear Power Plant","18":"Temporary Residential Cubes","19":"Academy","20":"Health & Sports Center","21":"Hangar","22":"Test Chamber","23":"Community Tower","24":"Consulate","25":"Laboratory","26":"Bunker","27":"Terran Embassy","28":"Obelisk","29":"Spaceport","30":"Prison Dome","31":"Cryogenic Cubes","32":"Galactic Marketplace"},
+  decree: {"1":"Private agricultural expansion","2":"Colony research enterprise","3":"Greenery habitats","4":"Mortgage subsidy","5":"Issue back bonds","6":"Lowering taxes","7":"Tax the wealthy","8":"Colony summit","9":"Colony fair","10":"Chain gang","11":"Free EV transportation","12":"Free communication network","13":"Colonist training program","14":"Right to arms","15":"SimStim education program","16":"After-hours militia","17":"Marines recruitment program","18":"Disaster relief security funds","19":"Governor elections","20":"Colony holiday","21":"Free SimStim program","22":"Serving the community","23":"Return bodies to Terra","24":"Pro bono government","25":"Respect civil rights","26":"Accelerated government","27":"Guest ID cards","28":"Strict customs","29":"Fire preparedness plan","30":"Free work clothes","31":"Live streamed court sessions","32":"Assistants control bureau","33":"Federal intervention","34":"The Chronicle newspaper","35":"Colony radio station","36":"Federal news channel","37":"Superconductor approval","38":"The R&D commission","39":"Political transparency","40":"Due diligence","41":"Private liability","42":"A 3d printer in every home","43":"Communication satellite","44":"Improving constitutional rights","45":"Colony monitoring","46":"Discounted license purchase","47":"Shorter work shifts","48":"Research budget cuts","49":"AI Rapid Court bails","50":"Tourism program","51":"Immigration promotional campaign","52":"Industrial preference","53":"Geological surveys","54":"Urban development","55":"Organic home farms","56":"Recycling program","57":"Free health program","58":"Accumulators technical inspection","59":"Independence funding program","60":"Side consultations","61":"Inventory checkout","62":"Colonial Guard Force creation","63":"Military pilots civil contracts","64":"Technician preference","65":"Public science consulting act","66":"Building permits","67":"Food rationing","68":"Paid healthcare","69":"Prohibition","70":"Private military contract","71":"Terran debt","72":"Expedition leader","73":"Legalize narcotics","74":"Legalize gambling","75":"Smoking ban","76":"Amnesty","77":"Curfew","78":"Military drills","79":"Secret Militia","80":"Home imprisonment","81":"Research frontrunners","82":"Prisoners as private contractors","83":"Closed court sessions","84":"Terran consulate","85":"Background investigations","86":"Budget cuts","87":"Big Brother program","88":"Social engineering","89":"Additional payments","90":"Political upheaval","91":"SimStim from Terran Republic","92":"SecForce duties expansion","93":"Deregulated pressure standards","94":"Lowering constitutional standards","95":"Observation satellite","96":"Census","97":"Contraception ban","98":"Closed environment","99":"Hired guns","100":"Additional technical shifts","101":"Stricter customs","102":"Water distribution strategy","103":"Immunization program","104":"Genetically modified crops","105":"Stem-cell research permit","106":"Gene modification permit","107":"Multilayered storage system","108":"Additional research budget"},
+  directive: {"201":"Athena Gore - War!","202":"Vlad Pokorny - Promised Land","203":"Ava Xu - Hidden stash","204":"Giselle Carter - Private expedition","205":"Mac McCain - Offshore account","206":"Paul Bloch - Humanoid subroutines","207":"Boris Artyomov - The Discovery Program","208":"Lucas Johannes - State of Emergency","209":"Art Chen - Pilgrimage"},
+  manager: {"1":"PREACHER","2":"RACKETEER","3":"ENGINEER","4":"INVENTOR","5":"WARDEN","6":"EXPLORER","7":"BROKER","8":"MAJOR","9":"VISIONARY"}
+};
 // User-action / board events (frame T=0x02 S=0x01 → app's routerUserAction).
-// payload[0] = category: 0x01 = building, 0x02 = NFC card.
-// For NFC cards: payload[1] = subclass, payload[2] = id.
-const NFC_SUBCLASS = { 1:"card-A", 2:"decree/directive", 3:"character", 4:"scenario" };
-const CARD_NAMES = { "3:1":"governor", "3:2":"ambassador" }; // subclass:id (confirmed live)
-function cardName(sub,id){ return CARD_NAMES[`${sub&0xff}:${id&0xff}`]; }
+// payload[0] = category (0x01 building, 0x02 NFC card). NFC: [1]=subclass, [2]=id.
+const SUBCLASS = { 1:"player", 2:"decree", 3:"token", 4:"card" };
+const TOKEN = { 1:"Governor", 2:"Ambassador" };
+function actionName(cat,sub,id){
+  if(cat===0x01) return NAMES.building[id];
+  if(cat===0x02){
+    if(sub===2) return NAMES.decree[id];
+    if(sub===3) return TOKEN[id];
+    if(sub===1) return "player #"+id;
+    if(sub===4) return NAMES.directive[id] || NAMES.manager[id];
+  }
+}
 function decodeUserAction(p){
   const cat=p[0];
-  if(cat===0x01){ const det=p[3]||0; return `<b>building</b> id ${hex(p[1])} data ${hex(p[2])} detail ${hex(det)} (hi ${det>>4} lo ${det&0xf})`; }
-  if(cat===0x02){ const sub=p[1], id=p[2], nm=cardName(sub,id); return `<b>NFC ${NFC_SUBCLASS[sub]||"sub "+hex(sub)}</b> id ${hex(id)}${nm?` (${nm})`:""}`; }
+  if(cat===0x01){ const id=p[1], det=p[3]||0, nm=NAMES.building[id];
+    return `<b>building</b> ${nm?`<span class="nm">${nm}</span> `:""}id ${hex(id)} · detail ${hex(det)} (hi ${det>>4} lo ${det&0xf})`; }
+  if(cat===0x02){ const sub=p[1], id=p[2], cls=SUBCLASS[sub]||("sub "+hex(sub)), nm=actionName(cat,sub,id);
+    return `<b>NFC ${cls}</b> id ${hex(id)}${nm?` · <span class="nm">${nm}</span>`:""}`; }
   return `<b>action</b> cat ${hex(cat)} [${hexs(p.slice(0,5))}]`;
 }
 
