@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARC Web-BLE Core — Beyond Humanity: Colonies</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2430; --line:#2b3441;
+    --fg:#e6edf3; --dim:#8b949e; --accent:#58a6ff; --green:#3fb950;
+    --red:#f85149; --amber:#d29922; --tx:#a371f7; --rx:#3fb950; --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  header{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  header h1{font-size:16px;margin:0;font-weight:600}
+  header .sub{color:var(--dim);font-size:12px}
+  .pill{font-size:11px;padding:2px 8px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+  .pill.on{color:var(--green);border-color:var(--green)}
+  .pill.off{color:var(--red);border-color:var(--red)}
+  main{display:grid;grid-template-columns:380px 1fr;gap:0;height:calc(100vh - 53px)}
+  .side{border-right:1px solid var(--line);overflow:auto;padding:14px}
+  .log-wrap{display:flex;flex-direction:column;min-width:0}
+  section{margin-bottom:18px}
+  section h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);margin:0 0 8px}
+  button{font:inherit;color:var(--fg);background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:7px 11px;cursor:pointer}
+  button:hover:not(:disabled){border-color:var(--accent)}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button.primary{background:var(--accent);color:#06122a;border-color:var(--accent);font-weight:600}
+  button.danger{border-color:var(--red);color:var(--red)}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .cmd-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .cmd-grid button{text-align:left;font-size:12.5px;padding:8px 9px;line-height:1.25}
+  .cmd-grid button small{display:block;color:var(--dim);font:11px var(--mono);margin-top:2px}
+  .grp{color:var(--accent);font:11px var(--mono);margin:10px 0 4px;grid-column:1/-1}
+  label{font-size:12px;color:var(--dim)}
+  input[type=text],input[type=number],select{font:13px var(--mono);background:#0b0f14;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+  input[type=text]{width:100%}
+  .field{margin:6px 0}
+  .field input{width:100%}
+  fieldset{border:1px solid var(--line);border-radius:7px;padding:8px 10px;margin:0}
+  fieldset legend{font-size:11px;color:var(--dim);padding:0 5px}
+  .preview{font:12px var(--mono);background:#0b0f14;border:1px solid var(--line);border-radius:6px;padding:8px;color:var(--green);word-break:break-all;min-height:20px}
+  .toolbar{display:flex;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .toolbar input[type=text]{width:auto;flex:1;min-width:120px}
+  #log{flex:1;overflow:auto;padding:6px 0;font:12.5px/1.45 var(--mono)}
+  .entry{padding:5px 14px;border-bottom:1px solid #11161d;display:grid;grid-template-columns:78px 42px 1fr;gap:10px;align-items:baseline}
+  .entry:hover{background:#11161d}
+  .entry .t{color:var(--dim);font-size:11px}
+  .entry .dir{font-weight:700;font-size:11px}
+  .entry.tx .dir{color:var(--tx)} .entry.rx .dir{color:var(--rx)}
+  .entry.sys .dir{color:var(--amber)} .entry.err .dir{color:var(--red)}
+  .entry .body{min-width:0;word-break:break-all}
+  .entry .hex{color:var(--fg)}
+  .entry .meta{color:var(--dim);font-size:11.5px;margin-top:2px}
+  .entry .meta b{color:var(--accent);font-weight:600}
+  .entry.err .body{color:var(--red)}
+  .bad{color:var(--red)} .ok{color:var(--green)}
+  .hint{color:var(--dim);font-size:11.5px;margin-top:6px}
+  a{color:var(--accent)}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  code{background:#0b0f14;padding:1px 5px;border-radius:4px;font:12px var(--mono)}
+</style>
+</head>
+<body>
+<header>
+  <h1>ARC Web-BLE Core</h1>
+  <span class="sub">Beyond Humanity: Colonies · companion-app BLE protocol (reconstructed)</span>
+  <span id="secCtx" class="pill"></span>
+  <span id="connState" class="pill off">disconnected</span>
+  <span id="mtuPill" class="pill" style="display:none"></span>
+</header>
+<main>
+  <div class="side">
+    <section>
+      <h2>Connection</h2>
+      <fieldset>
+        <legend>device discovery</legend>
+        <div class="field">
+          <label><input type="radio" name="filter" value="service" checked> Filter by NUS service</label><br>
+          <label><input type="radio" name="filter" value="name"> By name prefix</label>
+          <input type="text" id="namePrefix" placeholder="e.g. ARC" style="margin-top:4px">
+          <label style="display:block;margin-top:4px"><input type="radio" name="filter" value="all"> Accept all devices</label>
+        </div>
+      </fieldset>
+      <div class="row" style="margin-top:10px">
+        <button id="btnConnect" class="primary">Connect</button>
+        <button id="btnDisconnect" class="danger" disabled>Disconnect</button>
+      </div>
+      <div class="field" style="margin-top:8px">
+        <label>Write mode</label>
+        <select id="writeMode" style="width:100%">
+          <option value="auto">auto (prefer with-response)</option>
+          <option value="response">with response</option>
+          <option value="noresponse">without response</option>
+        </select>
+      </div>
+      <div class="hint" id="devInfo"></div>
+    </section>
+
+    <section>
+      <h2>Frame settings</h2>
+      <div class="split">
+        <div class="field"><label>start byte</label><input type="text" id="startByte" value="0x55"></div>
+        <div class="field"><label>flag (header[1])</label><input type="text" id="flagByte" value="0x00"></div>
+      </div>
+      <div class="hint">Frame = <code>[start][flag][len][...payload][crc8]</code>, <code>len</code>=total bytes, CRC-8 poly 0x07. <code>flag</code> is set dynamically by the app (default header is <code>0x03</code>; protocol-version uses a testing flag) — try <code>0x00</code> / <code>0x03</code> and report which the ARC accepts.</div>
+    </section>
+
+    <section>
+      <h2>Commands</h2>
+      <div class="cmd-grid" id="cmdGrid"></div>
+      <div class="hint">⚑ = exact bytes confirmed in app. ≈ = payload shape inferred. Hover a button to see the wire frame.</div>
+    </section>
+
+    <section>
+      <h2>Custom frame</h2>
+      <div class="field">
+        <label>payload bytes (from <code>type</code> onward, hex)</label>
+        <input type="text" id="customPayload" placeholder="01 01 03 01">
+      </div>
+      <div class="field"><label>preview</label><div class="preview" id="customPreview">—</div></div>
+      <div class="row"><button id="btnSendCustom">Send custom</button>
+      <label style="margin-left:auto"><input type="checkbox" id="rawMode"> raw (send exactly these bytes, no envelope)</label></div>
+    </section>
+  </div>
+
+  <div class="log-wrap">
+    <div class="toolbar">
+      <strong style="font-size:12px">Session log</strong>
+      <input type="text" id="logFilter" placeholder="filter (hex / text)…">
+      <label style="color:var(--dim);font-size:12px"><input type="checkbox" id="autoscroll" checked> autoscroll</label>
+      <span style="flex:1"></span>
+      <button id="btnCopy">Copy report</button>
+      <button id="btnDownload">Download JSON</button>
+      <button id="btnClear" class="danger">Clear</button>
+    </div>
+    <div id="log"></div>
+  </div>
+</main>
+
+<script>
+"use strict";
+//============================================================================
+// Nordic UART Service (the ARC's GATT transport)
+//============================================================================
+const NUS_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const NUS_RX      = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"; // app -> ARC (Write)
+const NUS_TX      = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; // ARC -> app (Notify)
+const START_BYTE_DEFAULT = 0x55;
+
+//============================================================================
+// CRC-8 (poly 0x07, init 0x00, no reflection, xorout 0x00) — matches app table
+//============================================================================
+function crc8(bytes){
+  let crc = 0;
+  for(const b of bytes){
+    crc ^= b & 0xff;
+    for(let i=0;i<8;i++) crc = (crc & 0x80) ? ((crc<<1) ^ 0x07) & 0xff : (crc<<1) & 0xff;
+  }
+  return crc & 0xff;
+}
+
+//============================================================================
+// Frame build / parse
+//============================================================================
+const hex = (n)=>"0x"+(n&0xff).toString(16).padStart(2,"0");
+const hexs = (arr)=>Array.from(arr).map(b=>(b&0xff).toString(16).padStart(2,"0")).join(" ");
+function parseHexList(str){
+  const out=[];
+  for(const tok of (str||"").trim().split(/[^0-9a-fx]+/i).filter(Boolean)){
+    const v=parseInt(tok,16); if(Number.isNaN(v)) throw new Error("bad byte: "+tok); out.push(v&0xff);
+  }
+  return out;
+}
+function getStart(){ const v=parseInt(document.getElementById("startByte").value,16); return Number.isNaN(v)?START_BYTE_DEFAULT:(v&0xff); }
+function getFlag(){ const v=parseInt(document.getElementById("flagByte").value,16); return Number.isNaN(v)?0x00:(v&0xff); }
+
+// payload = bytes starting at the `type` byte (offset 3). Returns full wire frame.
+function buildFrame(payload){
+  const start=getStart(), flag=getFlag();
+  const len = 4 + payload.length;            // start+flag+len + payload + crc
+  const body = [start, flag, len, ...payload];
+  const crc = crc8(body);
+  return Uint8Array.from([...body, crc]);
+}
+
+// Parse one wire frame (Uint8Array/array). Returns a descriptor.
+function parseFrame(f){
+  f = Array.from(f);
+  const d = { ok:false, raw:f };
+  if(f.length < 5){ d.note="too short"; return d; }
+  d.start=f[0]; d.flag=f[1]; d.len=f[2]; d.type=f[3]; d.subtype=f[4];
+  d.payload=f.slice(5, f.length-1);
+  d.crcRx=f[f.length-1];
+  d.crcCalc=crc8(f.slice(0, f.length-1));
+  d.crcOk = d.crcRx===d.crcCalc;
+  d.lenOk = d.len===f.length;
+  d.ok = d.crcOk && d.lenOk && d.start===getStart();
+  return d;
+}
+
+// little-endian unsigned / signed helpers (mirror decodeLittleEndian / decodeToSignedInt)
+function leUint(bytes){ let v=0; for(let i=bytes.length-1;i>=0;i--) v=v*256+(bytes[i]&0xff); return v; }
+function leSint(bytes){ let v=leUint(bytes); const bits=bytes.length*8; if(v>=2**(bits-1)) v-=2**bits; return v; }
+const BATTERY_SCALE = 0.0004615; // voltage = scale * leUint(payload)  (from app)
+
+//============================================================================
+// Command catalogue (reconstructed). payload = bytes from `type` onward.
+//============================================================================
+function simCard(cardId){ return [0x05,0x01,0x02,0x03,cardId, ...Array(13).fill(0x00)]; } // 18-byte debug inject
+const COMMANDS = [
+  {grp:"System info (0x03)"},
+  {label:"⚑ Device ID",        payload:[0x03,0x01], note:"check device id req"},
+  {label:"⚑ Battery",          payload:[0x03,0x02], note:"check battery req · resp voltage=0.0004615×LE"},
+  {label:"⚑ Firmware",         payload:[0x03,0x03], note:"check firmware req"},
+  {label:"⚑ Protocol version", payload:[0x03,0x02], note:"same bytes as battery — flag/offset differs"},
+
+  {grp:"Modules / lights (0x02)"},
+  {label:"⚑ Get modules",      payload:[0x02,0x03], note:"NFC modules on board"},
+  {label:"⚑ Lights: WIN",      payload:[0x02,0x04,0xff,0x01], note:"arcLights() win"},
+  {label:"⚑ Lights: LOSE",     payload:[0x02,0x04,0xff,0x02], note:"arcLights() lose"},
+
+  {grp:"Game mode (0x04)"},
+  {label:"⚑ Enter game mode",  payload:[0x04,0x01,0x03], note:"enter game mode req"},
+
+  {grp:"Engine state (0x01·03)"},
+  {label:"⚑ Engine: static",   payload:[0x01,0x01,0x03,0x01]},
+  {label:"⚑ Engine: dynamic",  payload:[0x01,0x01,0x03,0x02]},
+  {label:"⚑ Engine: init",     payload:[0x01,0x01,0x03,0x03]},
+
+  {grp:"Fleet / saved state (0x01)"},
+  {label:"⚑ Get fleet",        payload:[0x01,0x01,0x04,0x01]},
+  {label:"⚑ Saved: static",    payload:[0x01,0x01,0x06,0x01,0x00]},
+  {label:"⚑ Saved: init",      payload:[0x01,0x01,0x06,0x03,0x00]},
+  {label:"≈ Init from save",   payload:[0x01,0x01,0x01,0x02,0x00], note:"app appends a unix timestamp after this"},
+
+  {grp:"Simulate / debug (0x05)"},
+  {label:"≈ Sim: governor",    payload:simCard(0x01), note:"18-byte debug inject"},
+  {label:"≈ Sim: ambassador",  payload:simCard(0x02), note:"18-byte debug inject"},
+];
+
+//============================================================================
+// Logging
+//============================================================================
+const logEl = document.getElementById("log");
+const entries = [];
+function nowStr(){ const d=new Date(); return d.toLocaleTimeString("en-GB",{hour12:false})+"."+String(d.getMilliseconds()).padStart(3,"0"); }
+function addEntry(dir, hexStr, metaHtml, kind){
+  const e={ ts:new Date().toISOString(), t:nowStr(), dir, hex:hexStr, meta:metaHtml?metaHtml.replace(/<[^>]+>/g,""):"", kind:kind||dir };
+  entries.push(e);
+  const div=document.createElement("div");
+  div.className="entry "+(kind||dir.toLowerCase());
+  div.dataset.search=(hexStr+" "+(e.meta||"")).toLowerCase();
+  div.innerHTML=`<span class="t">${e.t}</span><span class="dir">${dir}</span><span class="body"><span class="hex">${hexStr||""}</span>${metaHtml?`<div class="meta">${metaHtml}</div>`:""}</span>`;
+  logEl.appendChild(div);
+  applyFilter(div);
+  if(document.getElementById("autoscroll").checked) logEl.scrollTop=logEl.scrollHeight;
+}
+function logSys(msg){ addEntry("SYS","",msg,"sys"); }
+function logErr(msg){ addEntry("ERR","",msg,"err"); }
+
+function describeTx(frame){
+  const d=parseFrame(frame);
+  return `<b>TYPE</b> ${hex(d.type)} <b>SUB</b> ${hex(d.subtype)} · len ${d.len} · payload [${hexs(d.payload)||"—"}] · crc ${hex(d.crcRx)}`;
+}
+function describeRx(d){
+  if(!d.ok){
+    return `<span class="bad">✗ ${!d.lenOk?`len ${d.len}≠${d.raw.length} `:""}${!d.crcOk?`crc ${hex(d.crcRx)}≠${hex(d.crcCalc)} `:""}${d.start!==getStart()?"start≠0x55":""}</span>`;
+  }
+  let extra="";
+  // battery heuristic: system-info (0x03) response with a 2+ byte payload
+  if(d.type===0x03 && d.payload.length>=2){
+    const v=(BATTERY_SCALE*leUint(d.payload.slice(0,2))).toFixed(3);
+    extra=` · <b>maybe battery</b> ${v} V`;
+  }
+  const p=d.payload;
+  const decodes = p.length?` · LE ${leUint(p)} · LEsigned ${leSint(p)}`:"";
+  return `<span class="ok">✓</span> <b>TYPE</b> ${hex(d.type)} <b>SUB</b> ${hex(d.subtype)} · payload [${hexs(p)||"—"}]${decodes}${extra}`;
+}
+
+//============================================================================
+// Web Bluetooth
+//============================================================================
+let device=null, rxChar=null, txChar=null;
+let rxBuffer=[]; // accumulated incoming bytes
+
+function setConnected(on){
+  document.getElementById("connState").textContent = on?"connected":"disconnected";
+  document.getElementById("connState").className = "pill "+(on?"on":"off");
+  document.getElementById("btnConnect").disabled = on;
+  document.getElementById("btnDisconnect").disabled = !on;
+}
+
+async function connect(){
+  if(!navigator.bluetooth){ logErr("Web Bluetooth not available in this browser. Use Chrome/Edge/Opera on desktop or Android, over HTTPS or localhost."); return; }
+  const mode=document.querySelector('input[name=filter]:checked').value;
+  let opts={ optionalServices:[NUS_SERVICE] };
+  if(mode==="service") opts.filters=[{services:[NUS_SERVICE]}];
+  else if(mode==="name"){ const pfx=document.getElementById("namePrefix").value.trim(); opts.filters=[{namePrefix:pfx||"ARC"}]; }
+  else opts.acceptAllDevices=true;
+  try{
+    logSys("Requesting device…");
+    device = await navigator.bluetooth.requestDevice(opts);
+    device.addEventListener("gattserverdisconnected", onDisconnected);
+    logSys(`Selected: <b>${device.name||"(no name)"}</b> [${device.id}]`);
+    const server = await device.gatt.connect();
+    logSys("GATT connected, getting NUS service…");
+    const svc = await server.getPrimaryService(NUS_SERVICE);
+    rxChar = await svc.getCharacteristic(NUS_RX);
+    txChar = await svc.getCharacteristic(NUS_TX);
+    await txChar.startNotifications();
+    txChar.addEventListener("characteristicvaluechanged", onNotify);
+    rxBuffer=[];
+    setConnected(true);
+    const props=[];
+    for(const k of ["write","writeWithoutResponse","notify","indicate","read"]) if(rxChar.properties[k]||txChar.properties[k]) props.push(k);
+    document.getElementById("devInfo").innerHTML=`RX props: ${Object.keys(rxChar.properties).filter(k=>rxChar.properties[k]).join(", ")}`;
+    logSys("Subscribed to TX notifications. Ready.");
+  }catch(err){
+    if(err && err.name==="NotFoundError") logSys("Device chooser cancelled.");
+    else logErr("Connect failed: "+(err&&err.message||err));
+  }
+}
+
+function onDisconnected(){ setConnected(false); rxChar=txChar=null; logSys("Device disconnected."); }
+async function disconnect(){ try{ if(device&&device.gatt.connected) device.gatt.disconnect(); }catch(e){} }
+
+async function sendBytes(frame, label){
+  if(!rxChar){ logErr("Not connected."); return; }
+  const u8 = frame instanceof Uint8Array ? frame : Uint8Array.from(frame);
+  const mode=document.getElementById("writeMode").value;
+  try{
+    if(mode==="noresponse" && rxChar.writeValueWithoutResponse) await rxChar.writeValueWithoutResponse(u8);
+    else if(mode==="response" && rxChar.writeValueWithResponse) await rxChar.writeValueWithResponse(u8);
+    else if(rxChar.properties.write && rxChar.writeValueWithResponse) await rxChar.writeValueWithResponse(u8);
+    else if(rxChar.writeValueWithoutResponse) await rxChar.writeValueWithoutResponse(u8);
+    else await rxChar.writeValue(u8); // legacy
+    addEntry("TX→", hexs(u8), (label?`<b>${label}</b> · `:"")+describeTx(u8), "tx");
+  }catch(err){ logErr("Write failed: "+(err&&err.message||err)+" — frame ["+hexs(u8)+"]"); }
+}
+
+function onNotify(ev){
+  const dv=ev.target.value;
+  const chunk=[]; for(let i=0;i<dv.byteLength;i++) chunk.push(dv.getUint8(i));
+  addEntry("rx·", hexs(chunk), `chunk (${chunk.length} B), buffering…`, "rx");
+  rxBuffer.push(...chunk);
+  drainBuffer();
+}
+
+function drainBuffer(){
+  let guard=0;
+  while(rxBuffer.length && guard++<64){
+    // resync to start byte
+    if(rxBuffer[0]!==getStart()){
+      const dropped=[]; while(rxBuffer.length && rxBuffer[0]!==getStart()) dropped.push(rxBuffer.shift());
+      if(dropped.length) addEntry("rx·", hexs(dropped), `<span class="bad">dropped ${dropped.length} byte(s) before start</span>`, "err");
+      continue;
+    }
+    if(rxBuffer.length<3) return;                 // need length byte
+    const len=rxBuffer[2];
+    if(len<5 || len>255){                          // implausible length → drop & resync
+      const bad=rxBuffer.shift();
+      addEntry("rx·", hex(bad), `<span class="bad">implausible len=${len}, dropping byte</span>`, "err");
+      continue;
+    }
+    if(rxBuffer.length<len) return;               // wait for the rest of the frame
+    const frame=rxBuffer.slice(0,len);
+    rxBuffer=rxBuffer.slice(len);
+    const d=parseFrame(frame);
+    if(d.ok){
+      addEntry("←RX", hexs(frame), describeRx(d), "rx");
+    }else{
+      // app behaviour: log "Wrong frame" and clear the whole buffer
+      addEntry("←RX", hexs(frame), describeRx(d)+` <span class="bad">(Wrong frame — buffer cleared)</span>`, "err");
+      rxBuffer=[];
+      return;
+    }
+  }
+}
+
+//============================================================================
+// UI wiring
+//============================================================================
+function buildCmdGrid(){
+  const g=document.getElementById("cmdGrid");
+  for(const c of COMMANDS){
+    if(c.grp){ const h=document.createElement("div"); h.className="grp"; h.textContent=c.grp; g.appendChild(h); continue; }
+    const b=document.createElement("button");
+    const frame=buildFrame(c.payload);
+    b.innerHTML=`${c.label}<small>${hexs(frame)}</small>`;
+    b.title=(c.note?c.note+"\n":"")+"wire: "+hexs(frame);
+    b.onclick=()=>sendBytes(buildFrame(c.payload), c.label.replace(/^[⚑≈]\s*/,""));
+    g.appendChild(b);
+  }
+}
+function refreshCmdPreviews(){
+  // rebuild small labels (flag/start may have changed)
+  document.getElementById("cmdGrid").innerHTML=""; buildCmdGrid(); updateCustomPreview();
+}
+function updateCustomPreview(){
+  const el=document.getElementById("customPreview");
+  try{
+    const payload=parseHexList(document.getElementById("customPayload").value);
+    if(document.getElementById("rawMode").checked){ el.textContent = payload.length?hexs(payload)+"  (raw, no envelope/CRC)":"—"; return; }
+    el.textContent = payload.length? hexs(buildFrame(payload)) : "—";
+  }catch(e){ el.textContent="⚠ "+e.message; }
+}
+function applyFilter(div){
+  const q=document.getElementById("logFilter").value.toLowerCase();
+  div.style.display = !q || div.dataset.search.includes(q) ? "" : "none";
+}
+function applyFilterAll(){ document.querySelectorAll(".entry").forEach(applyFilter); }
+
+function copyReport(){
+  const head=[
+    "ARC Web-BLE session report",
+    "date: "+new Date().toISOString(),
+    "device: "+(device?(device.name||"(no name)")+" / "+device.id:"(none)"),
+    "start=0x"+getStart().toString(16)+" flag=0x"+getFlag().toString(16),
+    "userAgent: "+navigator.userAgent,
+    "".padEnd(60,"-")
+  ].join("\n");
+  const body=entries.map(e=>`${e.t}  ${e.dir.padEnd(4)} ${e.hex}${e.meta?"   | "+e.meta:""}`).join("\n");
+  const text=head+"\n"+body;
+  navigator.clipboard.writeText(text).then(()=>logSys("Report copied to clipboard — paste it back as feedback."),
+    ()=>{ const ta=document.createElement("textarea"); ta.value=text; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); logSys("Report copied."); });
+}
+function downloadJSON(){
+  const data={ date:new Date().toISOString(), device:device?{name:device.name,id:device.id}:null,
+    frame:{start:getStart(),flag:getFlag()}, userAgent:navigator.userAgent, entries };
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download="arc-ble-session.json"; a.click(); URL.revokeObjectURL(a.href);
+}
+
+// secure-context indicator
+(function(){
+  const p=document.getElementById("secCtx");
+  if(window.isSecureContext){ p.textContent="secure context ✓"; p.className="pill on"; }
+  else{ p.textContent="insecure — Web BLE blocked"; p.className="pill off"; }
+})();
+
+document.getElementById("btnConnect").onclick=connect;
+document.getElementById("btnDisconnect").onclick=disconnect;
+document.getElementById("btnSendCustom").onclick=()=>{
+  try{
+    const payload=parseHexList(document.getElementById("customPayload").value);
+    if(!payload.length){ logErr("Empty payload."); return; }
+    if(document.getElementById("rawMode").checked) sendBytes(Uint8Array.from(payload),"raw");
+    else sendBytes(buildFrame(payload),"custom");
+  }catch(e){ logErr(e.message); }
+};
+document.getElementById("customPayload").oninput=updateCustomPreview;
+document.getElementById("rawMode").onchange=updateCustomPreview;
+document.getElementById("flagByte").oninput=refreshCmdPreviews;
+document.getElementById("startByte").oninput=refreshCmdPreviews;
+document.getElementById("logFilter").oninput=applyFilterAll;
+document.getElementById("btnCopy").onclick=copyReport;
+document.getElementById("btnDownload").onclick=downloadJSON;
+document.getElementById("btnClear").onclick=()=>{ logEl.innerHTML=""; entries.length=0; };
+
+buildCmdGrid();
+updateCustomPreview();
+logSys('Loaded. Connect to the ARC (powered on, in range). Self-test: <b>crc8([0x55,0x00,0x06,0x02,0x03]) = '+hex(crc8([0x55,0x00,0x06,0x02,0x03]))+'</b>.');
+</script>
+</body>
+</html>
