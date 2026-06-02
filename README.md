@@ -2,7 +2,7 @@
 
 A single-page **Web Bluetooth** console for talking to the *Beyond Humanity: Colonies* electronic core ("ARC") over BLE.
 
-**Live tool:** https://openfantasymap.github.io/bhc-bt/
+**Live tool:** https://www.fantasymaps.org/bhc-bt/
 
 It connects over the Nordic UART Service, builds/parses the framed serial protocol (start byte, length, CRC‑8), and gives you one-click commands plus a custom-frame sender and a session log you can export.
 
