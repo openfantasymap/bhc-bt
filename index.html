@@ -104,7 +104,7 @@
         <div class="field"><label>start byte</label><input type="text" id="startByte" value="0x55"></div>
         <div class="field"><label>flag (header[1])</label><input type="text" id="flagByte" value="0x00"></div>
       </div>
-      <div class="hint">Frame = <code>[start][flag][len][...payload][crc8]</code>, <code>len</code>=total bytes, CRC-8 poly 0x07. <code>flag</code> is set dynamically by the app (default header is <code>0x03</code>; protocol-version uses a testing flag) — try <code>0x00</code> / <code>0x03</code> and report which the ARC accepts.</div>
+      <div class="hint">Frame = <code>[start][flag][len][...payload][crc8]</code>, <code>len</code>=total bytes, CRC-8 poly 0x07. ✓ Live-confirmed: the ARC accepts requests with <code>flag=0x00</code> and its own replies carry <code>flag=0x05</code>. State queries return only an <code>ACK</code> until a game is authenticated; NFC card taps stream in regardless.</div>
     </section>
 
     <section>
@@ -205,6 +205,10 @@ function leUint(bytes){ let v=0; for(let i=bytes.length-1;i>=0;i--) v=v*256+(byt
 function leSint(bytes){ let v=leUint(bytes); const bits=bytes.length*8; if(v>=2**(bits-1)) v-=2**bits; return v; }
 const BATTERY_SCALE = 0.0004615; // voltage = scale * leUint(payload)  (from app)
 
+// Known NFC card identities (payload = [marker, cardType, cardId, ...]); confirmed live.
+const CARD_TYPES = { "03:01":"governor", "03:02":"ambassador" };
+function cardName(ct,ci){ return CARD_TYPES[`${(ct&0xff).toString(16).padStart(2,"0")}:${(ci&0xff).toString(16).padStart(2,"0")}`]; }
+
 //============================================================================
 // Command catalogue (reconstructed). payload = bytes from `type` onward.
 //============================================================================
@@ -264,19 +268,27 @@ function describeTx(frame){
   const d=parseFrame(frame);
   return `<b>TYPE</b> ${hex(d.type)} <b>SUB</b> ${hex(d.subtype)} · len ${d.len} · payload [${hexs(d.payload)||"—"}] · crc ${hex(d.crcRx)}`;
 }
+function decodeResponse(d){
+  const p=d.payload;
+  // 0x00 = generic ACK / status (confirmed: ARC replies 00 ff <status> to every command)
+  if(d.type===0x00) return `<b>ACK</b> status ${p.length?hex(p[0]):"—"}`;
+  // 0x02 = NFC / module / user-action event (resp[3]===0x02 path in app)
+  if(d.type===0x02){
+    const ct=p[1], ci=p[2], nm=cardName(ct,ci);
+    return `<b>NFC/module</b> type ${hex(ct)} id ${hex(ci)}${nm?` (${nm})`:""}`;
+  }
+  // 0x03 = system info → first 2 bytes may be battery voltage
+  if(d.type===0x03 && p.length>=2) return `<b>sysinfo</b> · battery? ${(BATTERY_SCALE*leUint(p.slice(0,2))).toFixed(3)} V`;
+  // small numeric payloads only
+  if(p.length>=1 && p.length<=4){ const u=leUint(p), s=leSint(p); return `LE ${u}${s!==u?` (signed ${s})`:""}`; }
+  return "";
+}
 function describeRx(d){
   if(!d.ok){
-    return `<span class="bad">✗ ${!d.lenOk?`len ${d.len}≠${d.raw.length} `:""}${!d.crcOk?`crc ${hex(d.crcRx)}≠${hex(d.crcCalc)} `:""}${d.start!==getStart()?"start≠0x55":""}</span>`;
+    return `<span class="bad">✗ ${!d.lenOk?`len ${d.len}≠${d.raw.length} `:""}${!d.crcOk?`crc ${hex(d.crcRx)}≠${hex(d.crcCalc)} `:""}${d.start!==getStart()?`start ${hex(d.start)}≠${hex(getStart())}`:""}</span> raw [${hexs(d.raw)}]`;
   }
-  let extra="";
-  // battery heuristic: system-info (0x03) response with a 2+ byte payload
-  if(d.type===0x03 && d.payload.length>=2){
-    const v=(BATTERY_SCALE*leUint(d.payload.slice(0,2))).toFixed(3);
-    extra=` · <b>maybe battery</b> ${v} V`;
-  }
-  const p=d.payload;
-  const decodes = p.length?` · LE ${leUint(p)} · LEsigned ${leSint(p)}`:"";
-  return `<span class="ok">✓</span> <b>TYPE</b> ${hex(d.type)} <b>SUB</b> ${hex(d.subtype)} · payload [${hexs(p)||"—"}]${decodes}${extra}`;
+  const info=decodeResponse(d);
+  return `<span class="ok">✓</span> flag ${hex(d.flag)} · <b>T</b> ${hex(d.type)} <b>S</b> ${hex(d.subtype)} · [${hexs(d.payload)||"—"}]${info?` · ${info}`:""}`;
 }
 
 //============================================================================
