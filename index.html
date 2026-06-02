@@ -220,7 +220,7 @@ const TOKEN = { 1:"Governor", 2:"Ambassador" };
 function actionName(cat,sub,id){
   if(cat===0x01) return NAMES.building[id];
   if(cat===0x02){
-    if(sub===2) return NAMES.decree[id];
+    if(sub===2) return NAMES.decree[id] || NAMES.directive[id]; // subclass 2 = decree (1-108) OR directive (201+)
     if(sub===3) return TOKEN[id];
     if(sub===1) return "player #"+id;
     if(sub===4) return NAMES.directive[id] || NAMES.manager[id];
@@ -230,7 +230,8 @@ function decodeUserAction(p){
   const cat=p[0];
   if(cat===0x01){ const id=p[1], det=p[3]||0, nm=NAMES.building[id];
     return `<b>building</b> ${nm?`<span class="nm">${nm}</span> `:""}id ${hex(id)} · detail ${hex(det)} (hi ${det>>4} lo ${det&0xf})`; }
-  if(cat===0x02){ const sub=p[1], id=p[2], cls=SUBCLASS[sub]||("sub "+hex(sub)), nm=actionName(cat,sub,id);
+  if(cat===0x02){ const sub=p[1], id=p[2], nm=actionName(cat,sub,id);
+    let cls=SUBCLASS[sub]||("sub "+hex(sub)); if(sub===2&&id>=200)cls="directive";
     return `<b>NFC ${cls}</b> id ${hex(id)}${nm?` · <span class="nm">${nm}</span>`:""}`; }
   return `<b>action</b> cat ${hex(cat)} [${hexs(p.slice(0,5))}]`;
 }
