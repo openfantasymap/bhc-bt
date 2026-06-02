@@ -124,6 +124,20 @@
       <div class="row"><button id="btnSendCustom">Send custom</button>
       <label style="margin-left:auto"><input type="checkbox" id="rawMode"> raw (send exactly these bytes, no envelope)</label></div>
     </section>
+
+    <section>
+      <h2>Auth / new game <span style="color:var(--amber)">⚗ experimental</span></h2>
+      <div class="field"><label>arcId (8 bytes, hex) <span id="capArc" class="pill" style="font-size:9px"></span></label><input type="text" id="authArcId" placeholder="auto-captured from device-id response"></div>
+      <div class="field"><label>boot (4 bytes, hex) <span id="capBoot" class="pill" style="font-size:9px"></span></label><input type="text" id="authBoot" placeholder="auto-captured"></div>
+      <div class="field"><label>battery (hex) <span id="capBat" class="pill" style="font-size:9px"></span></label><input type="text" id="authBattery" placeholder="auto-captured from battery response"></div>
+      <div class="field"><label>init bytes (hex, optional — padded to 222 with 0x00 for the hash)</label><input type="text" id="authInit" placeholder="empty = 222 zero bytes"></div>
+      <div class="row">
+        <button id="btnSendInit">1 · Send new-game init</button>
+        <button id="btnAuth" class="primary">2 · MD5 + Authenticate</button>
+      </div>
+      <div class="field"><label>MD5(init·arcId·battery·boot)</label><div class="preview" id="md5Preview">—</div></div>
+      <div class="hint">Flow: query <b>Device ID</b> + <b>Battery</b> (the ARC must answer with data, not the <code>00 ff 47</code> ACK — try a freshly powered/woken ARC). arcId/boot/battery auto-fill above. Then <b>1</b> sends the new-game init, <b>2</b> sends <code>MD5(init·arcId·battery·boot)</code> as <code>01 01 01 04 …</code>. If it takes, the engine/fleet/saved-state queries should start returning real data.</div>
+    </section>
   </div>
 
   <div class="log-wrap">
@@ -160,6 +174,45 @@ function crc8(bytes){
     for(let i=0;i<8;i++) crc = (crc & 0x80) ? ((crc<<1) ^ 0x07) & 0xff : (crc<<1) & 0xff;
   }
   return crc & 0xff;
+}
+
+//============================================================================
+// MD5 (the app uses MD5 for the new-game auth hash; Web Crypto has no MD5)
+//============================================================================
+function md5bytes(bytes){
+  const rl=(x,c)=>(x<<c)|(x>>>(32-c)), add=(a,b)=>(a+b)&0xffffffff;
+  const cmn=(q,a,b,x,s,t)=>add(rl(add(add(a,q),add(x,t)),s),b);
+  const ff=(a,b,c,d,x,s,t)=>cmn((b&c)|((~b)&d),a,b,x,s,t);
+  const gg=(a,b,c,d,x,s,t)=>cmn((b&d)|(c&(~d)),a,b,x,s,t);
+  const hh=(a,b,c,d,x,s,t)=>cmn(b^c^d,a,b,x,s,t);
+  const ii=(a,b,c,d,x,s,t)=>cmn(c^(b|(~d)),a,b,x,s,t);
+  const msg=bytes.slice(), bitLen=bytes.length*8; msg.push(0x80);
+  while(msg.length%64!==56) msg.push(0);
+  for(let i=0;i<8;i++) msg.push((bitLen/Math.pow(2,8*i))&0xff);
+  let a=1732584193,b=-271733879,c=-1732584194,d=271733878;
+  for(let i=0;i<msg.length;i+=64){
+    const x=[]; for(let j=0;j<16;j++){const o=i+j*4;x[j]=msg[o]|(msg[o+1]<<8)|(msg[o+2]<<16)|(msg[o+3]<<24);}
+    const oa=a,ob=b,oc=c,od=d;
+    a=ff(a,b,c,d,x[0],7,-680876936);d=ff(d,a,b,c,x[1],12,-389564586);c=ff(c,d,a,b,x[2],17,606105819);b=ff(b,c,d,a,x[3],22,-1044525330);
+    a=ff(a,b,c,d,x[4],7,-176418897);d=ff(d,a,b,c,x[5],12,1200080426);c=ff(c,d,a,b,x[6],17,-1473231341);b=ff(b,c,d,a,x[7],22,-45705983);
+    a=ff(a,b,c,d,x[8],7,1770035416);d=ff(d,a,b,c,x[9],12,-1958414417);c=ff(c,d,a,b,x[10],17,-42063);b=ff(b,c,d,a,x[11],22,-1990404162);
+    a=ff(a,b,c,d,x[12],7,1804603682);d=ff(d,a,b,c,x[13],12,-40341101);c=ff(c,d,a,b,x[14],17,-1502002290);b=ff(b,c,d,a,x[15],22,1236535329);
+    a=gg(a,b,c,d,x[1],5,-165796510);d=gg(d,a,b,c,x[6],9,-1069501632);c=gg(c,d,a,b,x[11],14,643717713);b=gg(b,c,d,a,x[0],20,-373897302);
+    a=gg(a,b,c,d,x[5],5,-701558691);d=gg(d,a,b,c,x[10],9,38016083);c=gg(c,d,a,b,x[15],14,-660478335);b=gg(b,c,d,a,x[4],20,-405537848);
+    a=gg(a,b,c,d,x[9],5,568446438);d=gg(d,a,b,c,x[14],9,-1019803690);c=gg(c,d,a,b,x[3],14,-187363961);b=gg(b,c,d,a,x[8],20,1163531501);
+    a=gg(a,b,c,d,x[13],5,-1444681467);d=gg(d,a,b,c,x[2],9,-51403784);c=gg(c,d,a,b,x[7],14,1735328473);b=gg(b,c,d,a,x[12],20,-1926607734);
+    a=hh(a,b,c,d,x[5],4,-378558);d=hh(d,a,b,c,x[8],11,-2022574463);c=hh(c,d,a,b,x[11],16,1839030562);b=hh(b,c,d,a,x[14],23,-35309556);
+    a=hh(a,b,c,d,x[1],4,-1530992060);d=hh(d,a,b,c,x[4],11,1272893353);c=hh(c,d,a,b,x[7],16,-155497632);b=hh(b,c,d,a,x[10],23,-1094730640);
+    a=hh(a,b,c,d,x[13],4,681279174);d=hh(d,a,b,c,x[0],11,-358537222);c=hh(c,d,a,b,x[3],16,-722521979);b=hh(b,c,d,a,x[6],23,76029189);
+    a=hh(a,b,c,d,x[9],4,-640364487);d=hh(d,a,b,c,x[12],11,-421815835);c=hh(c,d,a,b,x[15],16,530742520);b=hh(b,c,d,a,x[2],23,-995338651);
+    a=ii(a,b,c,d,x[0],6,-198630844);d=ii(d,a,b,c,x[7],10,1126891415);c=ii(c,d,a,b,x[14],15,-1416354905);b=ii(b,c,d,a,x[5],21,-57434055);
+    a=ii(a,b,c,d,x[12],6,1700485571);d=ii(d,a,b,c,x[3],10,-1894986606);c=ii(c,d,a,b,x[10],15,-1051523);b=ii(b,c,d,a,x[1],21,-2054922799);
+    a=ii(a,b,c,d,x[8],6,1873313359);d=ii(d,a,b,c,x[15],10,-30611744);c=ii(c,d,a,b,x[6],15,-1560198380);b=ii(b,c,d,a,x[13],21,1309151649);
+    a=ii(a,b,c,d,x[4],6,-145523070);d=ii(d,a,b,c,x[11],10,-1120210379);c=ii(c,d,a,b,x[2],15,718787259);b=ii(b,c,d,a,x[9],21,-343485551);
+    a=add(a,oa);b=add(b,ob);c=add(c,oc);d=add(d,od);
+  }
+  const hx=n=>{let s="";for(let i=0;i<4;i++)s+=((n>>(i*8))&0xff).toString(16).padStart(2,"0");return s;};
+  return hx(a)+hx(b)+hx(c)+hx(d);
 }
 
 //============================================================================
@@ -406,6 +459,7 @@ function drainBuffer(){
     const d=parseFrame(frame);
     if(d.ok){
       addEntry("←RX", hexs(frame), describeRx(d), "rx");
+      captureAuth(d);
     }else{
       // app behaviour: log "Wrong frame" and clear the whole buffer
       addEntry("←RX", hexs(frame), describeRx(d)+` <span class="bad">(Wrong frame — buffer cleared)</span>`, "err");
@@ -495,6 +549,44 @@ document.getElementById("logFilter").oninput=applyFilterAll;
 document.getElementById("btnCopy").onclick=copyReport;
 document.getElementById("btnDownload").onclick=downloadJSON;
 document.getElementById("btnClear").onclick=()=>{ logEl.innerHTML=""; entries.length=0; };
+
+//============================================================================
+// Auth / new-game handshake — MD5(init·arcId·battery·boot) → 01 01 01 04 …
+//============================================================================
+function setIf(id,val){ const el=document.getElementById(id); if(!el.value.trim()) el.value=val; }
+function capFlag(id,txt){ const el=document.getElementById(id); el.textContent=txt; el.className="pill on"; }
+function captureAuth(d){
+  // device-info responses are category 0x03 (mirrors the request); best-effort auto-fill.
+  if(d.type!==0x03) return;
+  const p=d.payload;
+  if(p.length>=12){ setIf("authArcId",hexs(p.slice(0,8))); setIf("authBoot",hexs(p.slice(8,12))); capFlag("capArc","arcId ✓"); capFlag("capBoot","boot ✓"); }
+  else if(p.length>=1 && p.length<=4){ setIf("authBattery",hexs(p)); capFlag("capBat","battery ✓"); }
+  refreshMd5();
+}
+function initBytes(){ return parseHexList(document.getElementById("authInit").value); }
+function initPadded(){ const b=initBytes(); while(b.length<222) b.push(0); return b.slice(0,222); }
+function computeMd5(){
+  const arcId=parseHexList(document.getElementById("authArcId").value);
+  const battery=parseHexList(document.getElementById("authBattery").value);
+  const boot=parseHexList(document.getElementById("authBoot").value);
+  return md5bytes([...initPadded(), ...arcId, ...battery, ...boot]);
+}
+function refreshMd5(){ try{ document.getElementById("md5Preview").textContent=computeMd5(); }catch(e){ document.getElementById("md5Preview").textContent="⚠ "+e.message; } }
+function sendInit(){ try{ sendBytes(buildFrame([0x01,0x01,0x01,0x01, ...initBytes()]), "new-game init"); }catch(e){ logErr("init: "+e.message); } }
+function sendAuth(){
+  try{
+    const arcId=parseHexList(document.getElementById("authArcId").value);
+    const boot=parseHexList(document.getElementById("authBoot").value);
+    if(arcId.length!==8){ logErr("arcId must be 8 bytes (have "+arcId.length+")"); return; }
+    if(boot.length!==4){ logErr("boot must be 4 bytes (have "+boot.length+")"); return; }
+    const md5=computeMd5(); document.getElementById("md5Preview").textContent=md5;
+    const md5b=md5.match(/../g).map(h=>parseInt(h,16));
+    sendBytes(buildFrame([0x01,0x01,0x01,0x04, ...md5b]), "auth (new game)");
+  }catch(e){ logErr("auth: "+e.message); }
+}
+document.getElementById("btnSendInit").onclick=sendInit;
+document.getElementById("btnAuth").onclick=sendAuth;
+["authInit","authArcId","authBattery","authBoot"].forEach(id=>document.getElementById(id).oninput=refreshMd5);
 
 buildCmdGrid();
 updateCustomPreview();
